@@ -6,12 +6,14 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.os.Binder;
 import android.os.Build;
 import android.os.CountDownTimer;
 import android.os.IBinder;
 import android.text.TextUtils;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -31,6 +33,15 @@ public class TimerService extends Service {
 
     private CountDownTimer mCountDownTimer;
 
+    private IBinder mLocalBinder = new TimerService.LocalBinder();
+
+    private OnTimerChangedListener mOnTimerChangedListener;
+
+    class LocalBinder extends Binder {
+        TimerService getBoundService() {
+            return TimerService.this;
+        }
+    }
 
     @Override
     public void onCreate() {
@@ -94,6 +105,7 @@ public class TimerService extends Service {
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(getString(R.string.notification_content_title))
                 .setContentText(getString(R.string.notification_content_description, time))
+                .setOnlyAlertOnce(true)
                 .addAction(0, getString(R.string.notification_stop_service_action), closePendingIntent)
                 .setContentIntent(pendingIntent);
 
@@ -112,13 +124,18 @@ public class TimerService extends Service {
         }
     }
 
-    private void startCountdownTimer(long time, long period) {
+    public void startCountdownTimer(long time, long period) {
         mCountDownTimer = new CountDownTimer(time, period) {
             @Override
             public void onTick(long l) {
                 Log.d(TAG, "onTick() called with: l = [" + l / 1000 + "]");
 
                 updateNotification(Long.toString(l / 1000));
+
+                if (mOnTimerChangedListener != null) {
+                    mOnTimerChangedListener.onTimerChanged(getString(R.string.notification_content_description,
+                            Long.toString(l / 1000)));
+                }
             }
 
             @Override
@@ -134,6 +151,27 @@ public class TimerService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        return null;
+        Log.d(TAG, "onBind() called with: intent = [" + intent + "]");
+
+        return mLocalBinder;
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        Log.d(TAG, "onUnbind() called with: intent = [" + intent + "]");
+
+        return super.onUnbind(intent);
+    }
+
+    public void startTimer(@NonNull OnTimerChangedListener onTimerChangedListener) {
+        mOnTimerChangedListener = onTimerChangedListener;
+
+        startCountdownTimer(100000, 1000);
+
+        startForeground(1, createNotification("100"));
+    }
+
+    interface OnTimerChangedListener {
+        void onTimerChanged(String timerText);
     }
 }
