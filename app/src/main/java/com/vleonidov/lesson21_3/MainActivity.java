@@ -4,28 +4,56 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
-    private static final String TAG = "BoundService";
-
-    private boolean mIsServiceBound;
-    private TimerService mBoundService;
+    private static final String TAG = "TimerService";
 
     private TextView mTimerTextView;
+
+    private boolean mIsServiceBound;
+
+    private Messenger mServiceMessenger;
+    private Messenger mMainActivityMessenger = new Messenger(new InternalMainActivityHandler());
+
+    public static final int MSG_UPDATE_TIMER_TEXT_VIEW = 202;
+    public static final String EXTRA_TIMER = "EXTRA_TIMER";
+
+    class InternalMainActivityHandler extends Handler {
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            switch (msg.what) {
+                case MSG_UPDATE_TIMER_TEXT_VIEW:
+                    Log.d(TAG, "handleMessage() called with: msg = [" + msg + "]");
+
+                    Bundle bundle = msg.getData();
+                    String timerText = bundle.getString(EXTRA_TIMER);
+
+                    mTimerTextView.setText(timerText);
+                    break;
+                default:
+                    super.handleMessage(msg);
+            }
+        }
+    }
 
     private ServiceConnection mServiceConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
             Log.d(TAG, "onServiceConnected() called with: componentName = [" + componentName + "], iBinder = [" + iBinder + "]");
 
-            mBoundService = ((TimerService.LocalBinder) iBinder).getBoundService();
+            mServiceMessenger = new Messenger(iBinder);
             mIsServiceBound = true;
         }
 
@@ -33,7 +61,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         public void onServiceDisconnected(ComponentName componentName) {
             Log.d(TAG, "onServiceDisconnected() called with: componentName = [" + componentName + "]");
 
-            mBoundService = null;
             mIsServiceBound = false;
         }
     };
@@ -57,14 +84,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         switch (view.getId()) {
             case R.id.start_service_button:
 
-//                Intent intent = new Intent(MainActivity.this, TimerService.class);
-//                startService(intent);
                 Intent intentStartService = new Intent(MainActivity.this, TimerService.class);
                 startService(intentStartService);
                 break;
             case R.id.stop_service:
-//                Intent intentStopService = new Intent(MainActivity.this, BoundService.class);
-//                stopService(intentStopService);
                 Intent intentStopServiceByAction = new Intent(MainActivity.this, TimerService.class);
                 intentStopServiceByAction.setAction(BoundService.ACTION_CLOSE);
                 startService(intentStopServiceByAction);
@@ -78,18 +101,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     unbindService(mServiceConnection);
 
                     mIsServiceBound = false;
-                    mBoundService = null;
                 }
                 break;
             case R.id.do_work_button:
                 if (mIsServiceBound) {
-//                    mBoundService.doSomeWork();
-                    mBoundService.startTimer(new TimerService.OnTimerChangedListener() {
-                        @Override
-                        public void onTimerChanged(String timerText) {
-                            mTimerTextView.setText(timerText);
-                        }
-                    });
+                    Message message = Message.obtain(null, TimerService.MSG_START_TIMER);
+                    message.replyTo = mMainActivityMessenger;
+                    try {
+                        mServiceMessenger.send(message);
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
                 }
                 break;
         }

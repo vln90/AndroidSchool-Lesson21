@@ -6,10 +6,14 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
-import android.os.Binder;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.CountDownTimer;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -17,6 +21,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+
+import static com.vleonidov.lesson21_3.MainActivity.MSG_UPDATE_TIMER_TEXT_VIEW;
 
 /**
  * @author Леонидов Василий on 2019-11-12
@@ -33,13 +39,24 @@ public class TimerService extends Service {
 
     private CountDownTimer mCountDownTimer;
 
-    private IBinder mLocalBinder = new TimerService.LocalBinder();
+    public static final int MSG_START_TIMER = 201;
 
-    private OnTimerChangedListener mOnTimerChangedListener;
+    private Messenger mMessenger = new Messenger(new InternalHandler());
 
-    class LocalBinder extends Binder {
-        TimerService getBoundService() {
-            return TimerService.this;
+    private Messenger mMainActivityMessenger;
+
+    class InternalHandler extends Handler {
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            switch (msg.what) {
+                case MSG_START_TIMER:
+                    mMainActivityMessenger = msg.replyTo;
+
+                    startTimer();
+                    break;
+                default:
+                    super.handleMessage(msg);
+            }
         }
     }
 
@@ -132,10 +149,7 @@ public class TimerService extends Service {
 
                 updateNotification(Long.toString(l / 1000));
 
-                if (mOnTimerChangedListener != null) {
-                    mOnTimerChangedListener.onTimerChanged(getString(R.string.notification_content_description,
-                            Long.toString(l / 1000)));
-                }
+                sendMessage(l);
             }
 
             @Override
@@ -148,12 +162,27 @@ public class TimerService extends Service {
         mCountDownTimer.start();
     }
 
+    private void sendMessage(long l) {
+        String timerMessage = getString(R.string.notification_content_description, Long.toString(l / 1000));
+        Bundle bundle = new Bundle();
+        bundle.putString(MainActivity.EXTRA_TIMER, timerMessage);
+
+        Message message = Message.obtain(null, MSG_UPDATE_TIMER_TEXT_VIEW);
+        message.setData(bundle);
+
+        try {
+            mMainActivityMessenger.send(message);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+    }
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
         Log.d(TAG, "onBind() called with: intent = [" + intent + "]");
 
-        return mLocalBinder;
+        return mMessenger.getBinder();
     }
 
     @Override
@@ -163,15 +192,9 @@ public class TimerService extends Service {
         return super.onUnbind(intent);
     }
 
-    public void startTimer(@NonNull OnTimerChangedListener onTimerChangedListener) {
-        mOnTimerChangedListener = onTimerChangedListener;
-
+    public void startTimer() {
         startCountdownTimer(100000, 1000);
 
         startForeground(1, createNotification("100"));
-    }
-
-    interface OnTimerChangedListener {
-        void onTimerChanged(String timerText);
     }
 }
